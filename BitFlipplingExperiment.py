@@ -67,5 +67,12 @@ for i in range(NUM_EPOCHS):
 
 print("Training time : %.2f"%(time.clock()-start), "s")
 
+with open('results/BitFlip_HER_FINAL.txt', 'w') as f:
+    for item in success_rate:
+        f.write("%s\n" % item)
+
 plt.plot(range(0, NUM_EPOCHS), success_rate)
+plt.title("Success rate by epoch using HER with final strategy")
+plt.xlabel("epoch")
+plt.ylabel("Success rate")
 plt.savefig("plots/BitFlip_HER_FINAL.svg", format="svg")
