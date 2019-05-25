@@ -9,7 +9,7 @@ HER_STRATEGY = "future"
 K = 4 # For strategy future
 REPLAY_MEMORY_SIZE = 100000
 NUM_BITS = 15
-NUM_EPOCHS = 2000
+NUM_EPOCHS = 250
 NUM_EPISODES = 16
 OPTIMIZATION_STEPS = 40
 
@@ -67,7 +67,7 @@ for i in range(NUM_EPOCHS):
     agent.next_episode(n)
     
     success_rate.append(successes/NUM_EPISODES)
-    print("Epoch:", i+1, " -- success rate:", success_rate[-1])
+    print("Epoch:", i+1, " -- success rate:", success_rate[-1], " -- epsilon: ", agent.epsilon)
 
 print("Training time : %.2f"%(time.clock()-start), "s")
 
@@ -75,7 +75,7 @@ with open('results/BitFlip_HER_FINAL.txt', 'w') as f:
     for item in success_rate:
         f.write("%s\n" % item)
 
-plt.plot(range(0, NUM_EPOCHS), success_rate)
+plt.plot(success_rate)
 plt.title("Success rate by epoch using HER with final strategy")
 plt.xlabel("epoch")
 plt.ylabel("Success rate")
