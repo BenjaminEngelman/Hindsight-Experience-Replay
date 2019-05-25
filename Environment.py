@@ -13,7 +13,7 @@ class BitFlippingEnv():
     def step(self, action):
         # An action is a position between 0 and n - 1
         assert(action >= 0 and action < self.n)
-        self.state[action] = 1 if self.state[action] == 0 else 1 # flip the bit
+        self.state[action] = 1 if self.state[action] == 0 else 0 # flip the bit
 
         done = np.array_equal(self.state, self.goal)
         reward = 1 if done else -1

@@ -58,6 +58,12 @@ class DQN:
         self.policy_net = NeuralNet(state_size, num_action, goal_size, lr)
         if init_nn is not None:
             self.policy_net = init_nn
+
+        self.target_net = NeuralNet(state_size, num_action, goal_size, lr)
+        self.target_net.set_weights(self.policy_net.get_weights())
+
+
+
         
     def get_action(self, state, goal, greedy=False):
         '''Return an action according to the eps-greedy policy
@@ -86,24 +92,24 @@ class DQN:
                 inputs, targets = [], [] # Will be used to batch fit the policy net (it's way faster)
                 
                 for state, action, reward, next_state, done, goal in batch:
-                    input_state = np.concatenate((state, goal), axis=0)
-                    input_state = preprocess_input(input_state, self.state_size * 2)
-
-                    target = self.policy_net.predict(input_state)[0] # Get the Q(s,a)
-                    if done:
-                        target[action] = reward
-                    else:
+                    target = reward
+                    if not done:
                         input_next_state = np.concatenate((next_state, goal))
                         input_next_state = preprocess_input(input_next_state, self.state_size * 2)
-                        next_state_Q = max(self.policy_net.predict(input_next_state)[0]) # Get max(Q(s',a'))
-                        target[action] = reward + self.gamma * next_state_Q 
+                        next_qvals = self.target_net.predict(input_next_state)[0]
+
+                        best_action = np.argmax(self.policy_net.predict(input_next_state))
+                        target = reward + self.gamma * next_qvals[best_action]
                     
+                    input_state = np.concatenate((state, goal), axis=0)
+                    input_state = preprocess_input(input_state, self.state_size * 2)
+                    q_vals = self.policy_net.predict(input_state)[0]
+                    q_vals[action] = target
                     inputs.append(input_state[0])
-                    targets.append(target)
+                    targets.append(q_vals)
                 
-                # Perform gradient descent step on (target - Q(s,a))^2 for all the experiences in the batch
                 self.policy_net.fit(np.array(inputs), np.array(targets), self.batch_size)
-        
+
             
     def next_episode(self, i):
         '''Updates the exploration rate and copy the weights of the policy net
@@ -112,10 +118,10 @@ class DQN:
         # Decrease exlporation        
         if self.epsilon > self.min_eps:
             self.epsilon *= self.eps_decay
+            self.epsilon = max(self.min_eps, self.epsilon)
         
-        # # Update target net
-        # self.target_net.set_weights(self.policy_net.get_weights())
+        # Update target net
+        self.target_net.set_weights(self.policy_net.get_weights())
         
         # Save model
-        if i % 10 == 0:
-            self.policy_net.model.save(SAVE_MODEL_PATH)
+        self.policy_net.model.save(SAVE_MODEL_PATH)

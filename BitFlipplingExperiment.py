@@ -3,8 +3,10 @@ from DQN import DQN
 from ReplayMemory import ReplayMemory
 import matplotlib.pyplot as plt
 import time
+import numpy as np
 
-HER_STRATEGY = "final"
+HER_STRATEGY = "future"
+K = 4 # For strategy future
 REPLAY_MEMORY_SIZE = 100000
 NUM_BITS = 15
 NUM_EPOCHS = 2000
@@ -27,7 +29,7 @@ for i in range(NUM_EPOCHS):
         state, goal = env.reset()
         for t in range(NUM_BITS):
             action = agent.get_action(state, goal)
-            next_state, reward, done = env.step(action)
+            next_state, reward, done= env.step(action)
             episode_exp.append([state, action, reward, next_state, done, goal])
             state = next_state
             if done:
@@ -41,18 +43,20 @@ for i in range(NUM_EPOCHS):
             experience[2] = 1 # set reward of success
             episode_exp.append(experience)
 
-        # if HER_STRATEGY == "future": # The strategy can be changed here
-        #     #         goal = state # HER, with substituted goal=final_state
-        #     for t in range(len(episode_memory.memory)):
-        #         for k in range(K):
-        #             future = np.random.randint(t, len(episode_memory.memory))
-        #             goal = episode_memory.memory[future][3] # next_state of future
-        #             state = episode_memory.memory[t][0]
-        #             action = episode_memory.memory[t][1]
-        #             next_state = episode_memory.memory[t][3]
-        #             done = np.array_equal(next_state, goal)
-        #             reward = 0 if done else -1
-        #             episode_memory_her.add(state, action, reward, next_state, done, goal)
+        elif HER_STRATEGY == "future": # The strategy can be changed here
+            # For each transition of the episode trajectory
+            for t in range(len(episode_exp)):
+                # Add K random states which come from the same episode as the transition
+                for k in range(K):
+                    # Select a number between t and the lenght of the episode 
+                    future = np.random.randint(t, len(episode_exp))
+                    g = episode_exp[future][3] # next_state of future
+                    s = episode_exp[t][0] # state of future
+                    a = episode_exp[t][1] # action of future
+                    ns = episode_exp[t][3] # next state of future
+                    d = np.array_equal(ns, g)
+                    r = 1 if done else -1
+                    episode_exp_her.append([s, a, r, ns, d, g])
         
 
         agent.remember(episode_exp)
@@ -63,7 +67,7 @@ for i in range(NUM_EPOCHS):
     agent.next_episode(n)
     
     success_rate.append(successes/NUM_EPISODES)
-    print("epoch", i+1, "success rate", success_rate[-1])
+    print("Epoch:", i+1, " -- success rate:", success_rate[-1])
 
 print("Training time : %.2f"%(time.clock()-start), "s")
 
