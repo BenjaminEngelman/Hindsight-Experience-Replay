@@ -51,7 +51,7 @@ for i in range(NUM_EPOCHS):
             experience[-2] = True # set done = true
             experience[-1] = experience[-3] # set g' = s'
             experience[2] = 1 # set reward of success
-            episode_exp.append(experience)
+            episode_exp_her.append(experience)
 
         elif HER_STRATEGY in ["future", "episode"]:
             # For each transition of the episode trajectory
@@ -60,11 +60,11 @@ for i in range(NUM_EPOCHS):
                 for k in range(K):
                     if HER_STRATEGY == "future":
                         # Select a future exp from the same episod
-                        selected = np.random.randint(t, len(episode_exp)) e
+                        selected = np.random.randint(t, len(episode_exp)) 
                     elif HER_STRATEGY == "episode":
                         # Select an exp from the same episode
                         selected = np.random.randint(0, len(episode_exp))  
-                    _, _, _, g, _, _ = episode_exp[selected] # g' = s' of selected
+                    _, _, _, g, _, _ = episode_exp[selected] # g = s' of selected
                     s, a, _, ns, _, _  = episode_exp[t]
                     d = np.array_equal(ns, g)
                     r = 1 if d else -1
