@@ -17,6 +17,7 @@ class Actor:
         self.tau = tau
         self.lr = lr
         self.model = self.network()
+        self.model.summary()
         self.target_model = self.network()
         self.adam_optimizer = self.optimizer()
 
@@ -25,17 +26,13 @@ class Actor:
         activation for continuous control. We add parameter noise to encourage
         exploration, and balance it with Layer Normalization.
         """
-        inp = Input((self.env_dim))
+        inp = Input(shape=[self.env_dim])
         #
-        x = Dense(64, activation='relu')(inp)
+        x = Dense(256, activation='relu')(inp)
         x = GaussianNoise(1.0)(x)
         #
-        x = Flatten()(x)
-        x = Dense(64, activation='relu')(x)
-        x = GaussianNoise(1.0)(x)
-        #
-        x = Flatten()(x)
-        x = Dense(64, activation='relu')(x)
+        # x = Flatten()(x)
+        x = Dense(128, activation='relu')(x)
         x = GaussianNoise(1.0)(x)
         #
         out = Dense(self.act_dim, activation='tanh', kernel_initializer=RandomUniform())(x)
@@ -43,10 +40,11 @@ class Actor:
         #
         return Model(inp, out)
 
-    def predict(self, state_goal):
+    def predict(self, state):
         """ Action prediction
         """
-        return self.model.predict(np.expand_dims(state_goal, axis=0))
+        state = state.reshape(28, 1).T
+        return self.model.predict(state)
 
     def target_predict(self, inp):
         """ Action prediction (target network)
@@ -61,10 +59,10 @@ class Actor:
             target_W[i] = self.tau * W[i] + (1 - self.tau)* target_W[i]
         self.target_model.set_weights(target_W)
 
-    def train(self, states_goals, actions, grads):
+    def train(self, states, actions, grads):
         """ Actor Training
         """
-        self.adam_optimizer([states_goals, grads])
+        self.adam_optimizer([states, grads])
 
     def optimizer(self):
         """ Actor Optimizer
@@ -72,7 +70,9 @@ class Actor:
         action_gdts = K.placeholder(shape=(None, self.act_dim))
         params_grad = tf.gradients(self.model.output, self.model.trainable_weights, -action_gdts)
         grads = zip(params_grad, self.model.trainable_weights)
-        return K.function([self.model.input, action_gdts], [tf.train.AdamOptimizer(self.lr).apply_gradients(grads)])
+        return K.function([self.model.input, action_gdts], [tf.train.AdamOptimizer(self.lr).apply_gradients(grads)][1:])
+
+
 
     def save(self, path):
         self.model.save_weights(path + '_actor.h5')

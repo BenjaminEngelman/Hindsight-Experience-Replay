@@ -18,6 +18,7 @@ class Critic:
         self.tau, self.lr = tau, lr
         # Build models and target models
         self.model = self.network()
+        self.model.summary()
         self.target_model = self.network()
         self.model.compile(Adam(self.lr), 'mse')
         self.target_model.compile(Adam(self.lr), 'mse')
@@ -27,10 +28,10 @@ class Critic:
     def network(self):
         """ Assemble Critic network to predict q-values
         """
-        state = Input((self.env_dim))
-        action = Input((self.act_dim,))
+        state = Input(shape=[self.env_dim])
+        action = Input(shape=[self.act_dim])
         x = Dense(256, activation='relu')(state)
-        x = concatenate([Flatten()(x), action])
+        x = concatenate([x, action])
         x = Dense(128, activation='relu')(x)
         out = Dense(1, activation='linear', kernel_initializer=RandomUniform())(x)
         return Model([state, action], out)
@@ -42,7 +43,7 @@ class Critic:
 
     def target_predict(self, inp):
         """ Predict Q-Values using the target network
-        """
+        """      
         return self.target_model.predict(inp)
 
     def train_on_batch(self, states, actions, critic_target):

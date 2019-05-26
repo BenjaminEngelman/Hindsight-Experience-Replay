@@ -2,11 +2,11 @@ import sys
 import numpy as np
 
 from tqdm import tqdm
-from .actor import Actor
-from .critic import Critic
-from utils.stats import gather_stats
-from utils.networks import tfSummary, OrnsteinUhlenbeckProcess
-from utils.memory_buffer import MemoryBuffer
+from actor import Actor
+from critic import Critic
+from stats import gather_stats
+from networks import tfSummary, OrnsteinUhlenbeckProcess
+from memory_buffer import MemoryBuffer
 
 class DDPG:
     """ Deep Deterministic Policy Gradient (DDPG) Helper Class
@@ -18,7 +18,7 @@ class DDPG:
         # Environment and A2C parameters
         self.act_dim = act_dim
         self.act_range = act_range
-        self.env_dim = (k,) + env_dim
+        self.env_dim = env_dim
         self.gamma = gamma
         self.lr = lr
         # Create actor and critic networks
@@ -26,10 +26,12 @@ class DDPG:
         self.critic = Critic(self.env_dim, act_dim, lr, tau)
         self.buffer = MemoryBuffer(buffer_size)
 
-    def policy_action(self, s):
+    def policy_action(self, s, g):
         """ Use the actor to predict value
         """
-        return self.actor.predict(s)[0]
+
+        input = np.concatenate((s,g), axis=0)
+        return self.actor.predict(input)[0]
 
     def bellman(self, rewards, q_values, dones):
         """ Use the Bellman Equation to compute the critic target
@@ -42,10 +44,10 @@ class DDPG:
                 critic_target[i] = rewards[i] + self.gamma * q_values[i]
         return critic_target
 
-    def memorize(self, state, action, reward, done, new_state):
+    def memorize(self, state, action, reward, done, new_state, goal):
         """ Store experience in memory buffer
         """
-        self.buffer.memorize(state, action, reward, done, new_state)
+        self.buffer.memorize(state, action, reward, done, new_state, goal)
 
     def sample_batch(self, batch_size):
         return self.buffer.sample_batch(batch_size)
@@ -68,40 +70,49 @@ class DDPG:
         results = []
 
         # First, gather experience
-        tqdm_e = tqdm(range(args.nb_episodes), desc='Score', leave=True, unit=" episodes")
+        tqdm_e = tqdm(range(args['nb_episodes']), desc='Score', leave=True, unit=" episodes")
         for e in tqdm_e:
 
             # Reset episode
             time, cumul_reward, done = 0, 0, False
-            old_state = env.reset()
+
+            observation = env.reset()
+            old_state = observation['observation']
+            ag = observation['achieved_goal']
+            goal = observation['desired_goal']
+
             actions, states, rewards = [], [], []
             noise = OrnsteinUhlenbeckProcess(size=self.act_dim)
 
             while not done:
-                if args.render: env.render()
+                if args['render']: env.render()
                 # Actor picks an action (following the deterministic policy)
-                a = self.policy_action(old_state)
+                a = self.policy_action(old_state, goal)
                 # Clip continuous values to be valid w.r.t. environment
                 a = np.clip(a+noise.generate(time), -self.act_range, self.act_range)
                 # Retrieve new state, reward, and whether the state is terminal
-                new_state, r, done, _ = env.step(a)
+                obs, r, done, _ = env.step(a)
+                new_state = obs['observation']
+                ag = obs['achieved_goal']
                 # Add outputs to memory buffer
-                self.memorize(old_state, a, r, done, new_state)
+                self.memorize(old_state, a, r, done, new_state, goal)
                 # Sample experience from buffer
-                states, actions, rewards, dones, new_states, _ = self.sample_batch(args.batch_size)
-                # Predict target q-values using target networks
-                q_values = self.critic.target_predict([new_states, self.actor.target_predict(new_states)])
+                states, actions, rewards, dones, new_states, goals,_ = self.sample_batch(args["batch_size"])
+                inputs = np.concatenate((new_states, goals), axis=1)
+                q_values = self.critic.target_predict([inputs, self.actor.target_predict(inputs)])
                 # Compute critic target
                 critic_target = self.bellman(rewards, q_values, dones)
                 # Train both networks on sampled batch, update target networks
-                self.update_models(states, actions, critic_target)
+                inputs = np.concatenate((states, goals), axis=1)
+
+                self.update_models(inputs, actions, critic_target)
                 # Update current state
                 old_state = new_state
                 cumul_reward += r
                 time += 1
 
             # Gather stats every episode for plotting
-            if(args.gather_stats):
+            if(args["gather_stats"]):
                 mean, stdev = gather_stats(self, env)
                 results.append([e, mean, stdev])
 
