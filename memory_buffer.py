@@ -2,7 +2,7 @@ import random
 import numpy as np
 
 from collections import deque
-from .sumtree import SumTree
+from sumtree import SumTree
 
 class MemoryBuffer(object):
     """ Memory Buffer Helper class for Experience Replay
