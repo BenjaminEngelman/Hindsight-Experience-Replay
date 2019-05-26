@@ -4,8 +4,17 @@ from ReplayMemory import ReplayMemory
 import matplotlib.pyplot as plt
 import time
 import numpy as np
+import argparse
 
-HER_STRATEGY = "future"
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--her", help="her strategy")
+args = parser.parse_args()
+if not args.her:
+    print("Please give the HER strategy")
+    exit(1)
+
+HER_STRATEGY = args.her
 K = 4 # For strategy future
 REPLAY_MEMORY_SIZE = 100000
 NUM_BITS = 15
@@ -37,27 +46,30 @@ for i in range(NUM_EPOCHS):
         successes += done
 
         if HER_STRATEGY == "final":
+            # Final experience becomes (s, a, r, s', g') where g' = s'
             experience = episode_exp[-1]
-            experience[-1] = state # substitute the goal
             experience[-2] = True # set done = true
+            experience[-1] = experience[-3] # set g' = s'
             experience[2] = 1 # set reward of success
             episode_exp.append(experience)
 
-        elif HER_STRATEGY == "future": # The strategy can be changed here
+        elif HER_STRATEGY in ["future", "episode"]:
             # For each transition of the episode trajectory
             for t in range(len(episode_exp)):
                 # Add K random states which come from the same episode as the transition
                 for k in range(K):
-                    # Select a number between t and the lenght of the episode 
-                    future = np.random.randint(t, len(episode_exp))
-                    g = episode_exp[future][3] # next_state of future
-                    s = episode_exp[t][0] # state of future
-                    a = episode_exp[t][1] # action of future
-                    ns = episode_exp[t][3] # next state of future
+                    if HER_STRATEGY == "future":
+                        # Select a future exp from the same episod
+                        selected = np.random.randint(t, len(episode_exp)) e
+                    elif HER_STRATEGY == "episode":
+                        # Select an exp from the same episode
+                        selected = np.random.randint(0, len(episode_exp))  
+                    _, _, _, g, _, _ = episode_exp[selected] # g' = s' of selected
+                    s, a, _, ns, _, _  = episode_exp[t]
                     d = np.array_equal(ns, g)
-                    r = 1 if done else -1
+                    r = 1 if d else -1
                     episode_exp_her.append([s, a, r, ns, d, g])
-        
+
 
         agent.remember(episode_exp)
         agent.remember(episode_exp_her)
@@ -71,12 +83,12 @@ for i in range(NUM_EPOCHS):
 
 print("Training time : %.2f"%(time.clock()-start), "s")
 
-with open('results/BitFlip_HER_FINAL.txt', 'w') as f:
+with open('results/BitFlip_HER_%s.txt'%(HER_STRATEGY), 'w') as f:
     for item in success_rate:
         f.write("%s\n" % item)
 
 plt.plot(success_rate)
-plt.title("Success rate by epoch using HER with final strategy")
+plt.title("Success rate by epoch using HER with %s strategy" % (HER_STRATEGY))
 plt.xlabel("epoch")
 plt.ylabel("Success rate")
-plt.savefig("plots/BitFlip_HER_FINAL.svg", format="svg")
+plt.savefig("plots/BitFlip_HER_%s.svg" % (HER_STRATEGY), format="svg")

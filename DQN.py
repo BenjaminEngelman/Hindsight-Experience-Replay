@@ -39,7 +39,7 @@ class NeuralNet:
         return self.model.fit(inputs, outputs, epochs=1, batch_size=batch_size, verbose=0)
 
 class DQN:
-    def __init__(self,num_action, state_size, goal_size, max_eps=1, min_eps=0.1, eps_decay=0.975, gamma=0.98, lr=0.001, batch_size=128, buffer_size=1000000, init_nn=None):
+    def __init__(self,num_action, state_size, goal_size, max_eps=0.2, min_eps=0.02, eps_decay=0.95, gamma=0.98, lr=0.001, batch_size=128, buffer_size=1000000, init_nn=None):
         
         # Init Hyperparameters       
         self.epsilon = max_eps
