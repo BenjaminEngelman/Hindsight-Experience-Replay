@@ -26,10 +26,11 @@ class DDPG:
         self.critic = Critic(self.env_dim, act_dim, lr, tau)
         self.buffer = MemoryBuffer(buffer_size)
 
-    def policy_action(self, s):
+    def policy_action(self, s, g):
         """ Use the actor to predict value
         """
-        return self.actor.predict(s)[0]
+        input = np.concatanate((s,g), axis=0)
+        return self.actor.predict(input)[0]
 
     def bellman(self, rewards, q_values, dones):
         """ Use the Bellman Equation to compute the critic target
@@ -42,10 +43,10 @@ class DDPG:
                 critic_target[i] = rewards[i] + self.gamma * q_values[i]
         return critic_target
 
-    def memorize(self, state, action, reward, done, new_state):
+    def memorize(self, state, action, reward, done, new_state, goal):
         """ Store experience in memory buffer
         """
-        self.buffer.memorize(state, action, reward, done, new_state)
+        self.buffer.memorize(state, action, reward, done, new_state, goal)
 
     def sample_batch(self, batch_size):
         return self.buffer.sample_batch(batch_size)

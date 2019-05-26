@@ -23,11 +23,11 @@ class MemoryBuffer(object):
         self.with_per = with_per
         self.buffer_size = buffer_size
 
-    def memorize(self, state, action, reward, done, new_state, error=None):
+    def memorize(self, state, action, reward, done, new_state, goal, error=None):
         """ Save an experience to memory, optionally with its TD-Error
         """
 
-        experience = (state, action, reward, done, new_state)
+        experience = (state, action, reward, done, new_state, goal)
         if(self.with_per):
             priority = self.priority(error[0])
             self.buffer.add(priority, experience)
@@ -79,7 +79,8 @@ class MemoryBuffer(object):
         r_batch = np.array([i[2] for i in batch])
         d_batch = np.array([i[3] for i in batch])
         new_s_batch = np.array([i[4] for i in batch])
-        return s_batch, a_batch, r_batch, d_batch, new_s_batch, idx
+        g_batch = np.array([i[5] for i in batch])
+        return s_batch, a_batch, r_batch, d_batch, new_s_batch, g_batch, idx
 
     def update(self, idx, new_error):
         """ Update priority for idx (PER)
