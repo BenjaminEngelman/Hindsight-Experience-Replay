@@ -63,7 +63,7 @@ class MemoryBuffer(object):
                 s = random.uniform(a, b)
                 idx, error, data = self.buffer.get(s)
                 batch.append((*data, idx))
-            idx = np.array([i[5] for i in batch])
+            idx = np.array([i[7] for i in batch])
         # Sample randomly from Buffer
         elif self.count < batch_size:
             idx = None

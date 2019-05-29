@@ -181,8 +181,7 @@ class DDPG:
                         new_state = obs['observation']
                         new_achieved_goal = obs['achieved_goal']
                         # Add outputs to memory buffer
-                        episode_exp.append([old_state.copy(), action.copy(
-                        ), reward, done, new_state.copy(), old_achieved_goal.copy(), goal.copy()])
+                        episode_exp.append([old_state.copy(), action.copy(), reward, done, new_state.copy(), old_achieved_goal.copy(), goal.copy()])
 
                         old_achieved_goal = new_achieved_goal
                         old_state = new_state
@@ -261,11 +260,14 @@ class DDPG:
         # Update Normalizers
         episode_exp_states = np.vstack(np.array(episode_exp)[:, 0])
         episode_exp_goals = np.vstack(np.array(episode_exp)[:, 6])
-        episode_exp_her_states = np.vstack(np.array(episode_exp_her)[:, 0])
-        episode_exp_her_goals = np.vstack(np.array(episode_exp_her)[:, 6])
-
-        states = np.concatenate([episode_exp_states, episode_exp_her_states])
-        goals = np.concatenate([episode_exp_goals, episode_exp_her_goals])
+        if len(episode_exp_her) != 0 :
+            episode_exp_her_states = np.vstack(np.array(episode_exp_her)[:, 0])
+            episode_exp_her_goals = np.vstack(np.array(episode_exp_her)[:, 6])
+            states = np.concatenate([episode_exp_states, episode_exp_her_states])
+            goals = np.concatenate([episode_exp_goals, episode_exp_her_goals])
+        else:
+            states = np.copy(episode_exp_states)
+            goals = np.copy(episode_exp_goals)
 
         states, goals = self.clip_states_goals(states, goals)
         self.state_normalizer.update(states)
