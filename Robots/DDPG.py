@@ -20,7 +20,7 @@ class DDPG:
     """ Deep Deterministic Policy Gradient (DDPG) Helper Class
     """
 
-    def __init__(self, env, act_dim, state_dim, goal_dim, act_range, k, buffer_size=int(1e6), gamma=0.98, lr=0.001, tau=0.95):
+    def __init__(self, env, act_dim, state_dim, goal_dim, act_range, buffer_size=int(1e6), gamma=0.98, lr=0.001, tau=0.95):
         """ Initialization
         """
         # Environment and A2C parameters
@@ -77,14 +77,13 @@ class DDPG:
     def preprocess_inputs(self, state, goal):
         """Normalize and concatenate state and goal"""
         #state, goal = self.clip_states_goals(state, goal)
-        state = self.state_normalizer.normalize(state)
-        goal = self.goal_normalizer.normalize(goal)
-        inputs = np.concatenate([state, goal])
+        state_norm = self.state_normalizer.normalize(state)
+        goal_norm = self.goal_normalizer.normalize(goal)
+        inputs = np.concatenate([state_norm, goal_norm])
         return torch.tensor(inputs, dtype=torch.float32).unsqueeze(0)
 
     def select_actions(self, pi):
         # add the gaussian
-        #action = pi.detach().cpu().numpy().squeeze()
         action = pi.cpu().numpy().squeeze()
         action += 0.2 * self.act_range * np.random.randn(*action.shape)
         action = np.clip(action, -self.act_range, self.act_range)
@@ -153,7 +152,8 @@ class DDPG:
                 (1 - self.tau) * param.data + self.tau * target_param.data)
 
     def train(self, args):
-        self.create_save_dir(args["save_dir"], args["env_name"], args["HER_strat"])
+        self.create_save_dir(
+            args["save_dir"], args["env_name"], args["HER_strat"])
 
         success_rates = []
         for ep_num in range(NUM_EPOCHS):
@@ -226,16 +226,16 @@ class DDPG:
                     # Update Normalizers with the observations of this episode
                     self.update_normalizers(episode_exp, episode_exp_her)
 
-                    # Train network
-                    for _ in range(OPTIMIZATION_STEPS):
-                        # Sample experience from buffer
-                        self.update_network(args["batch_size"])
+                # Train network
+                for _ in range(OPTIMIZATION_STEPS):
+                    # Sample experience from buffer
+                    self.update_network(args["batch_size"])
 
-                    # Soft update the target networks
-                    self.soft_update_target_network(
-                        self.actor_target_network, self.actor_network)
-                    self.soft_update_target_network(
-                        self.critic_target_network, self.critic_network)
+                # Soft update the target networks
+                self.soft_update_target_network(
+                    self.actor_target_network, self.actor_network)
+                self.soft_update_target_network(
+                    self.critic_target_network, self.critic_network)
 
             success_rate = self.eval()
             success_rates.append(success_rate)
@@ -280,17 +280,15 @@ class DDPG:
             observation = self.env.reset()
             state = observation['observation']
             goal = observation['desired_goal']
-            for _ in range(50):
+            for _ in range(self.env._max_episode_steps):
                 with torch.no_grad():
                     input = self.preprocess_inputs(state, goal)
                     pi = self.actor_network(input)
                     action = pi.detach().cpu().numpy().squeeze()
                 new_observation, _, _, info = self.env.step(action)
                 state = new_observation['observation']
-                goal = new_observation['desired_goal']
-                if info['is_success']:
-                    eval_success += 1
-                    break
+            if info['is_success']:
+                eval_success += 1
 
         eval_success = eval_success / NUM_TEST
         return eval_success

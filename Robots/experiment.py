@@ -21,6 +21,7 @@ if not args.her_strat or not args.env or not args.k:
 
 if args.her_strat not in ['future', 'final']:
     print("Invalid HER strategy")
+    print("Strategies: final, future, episode")
     exit(1)
 
 env_name = args.env
@@ -32,8 +33,7 @@ state_dim = obs['observation'].shape[0]
 goal_dim = obs['desired_goal'].shape[0]
 act_range = env.action_space.high[0]
 
-agent  = DDPG(env, act_dim, state_dim, goal_dim, act_range, 1, buffer_size=1000000, gamma=0.98)
-summary_writer = tf.summary.FileWriter("logs_DDPG")
+agent  = DDPG(env, act_dim, state_dim, goal_dim, act_range, buffer_size=1000000, gamma=0.98)
 train_args = {
     "env_name": args.env,
     "save_dir": "saved_models",
