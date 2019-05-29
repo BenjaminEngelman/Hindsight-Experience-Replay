@@ -35,8 +35,10 @@ act_range = env.action_space.high[0]
 agent  = DDPG(env, act_dim, state_dim, goal_dim, act_range, 1, buffer_size=1000000, gamma=0.98)
 summary_writer = tf.summary.FileWriter("logs_DDPG")
 train_args = {
+    "env_name": args.env,
+    "save_dir": "saved_models",
     "render": False if args.render == "False" else True,
-    "batch_size": 128,
+    "batch_size": 256,
     "HER_strat": args.her_strat,
     "HER_k": int(args.k),
     "max_timesteps": env._max_episode_steps
