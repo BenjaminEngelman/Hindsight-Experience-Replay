@@ -58,7 +58,7 @@ class DDPG:
         """
         for exp in experiences:
             state, action, reward, done, new_state, ag, goal = exp
-            self.buffer.memorize(state, action, reward, done, new_state, ag, goal)
+            self.buffer.memorize(np.copy(state), np.copy(action), reward, done, np.copy(new_state), np.copy(ag), np.copy(goal))
 
     def sample_batch(self, batch_size):
         return self.buffer.sample_batch(batch_size)
@@ -69,26 +69,25 @@ class DDPG:
         return state, goal
     
     def preprocess_inputs(self, state, goal):
-        state, goal = self.clip_states_goals(state, goal)
-        states = self.state_normalizer.normalize(state)
-        goals = self.goal_normalizer.normalize(goal)
+        state = self.state_normalizer.normalize(state)
+        goal = self.goal_normalizer.normalize(goal)
         inputs = np.concatenate([state, goal])
         return  torch.tensor(inputs, dtype=torch.float32).unsqueeze(0)
     
     def select_actions(self, pi):
         # add the gaussian
         action = pi.detach().cpu().numpy().squeeze()
-        # action += 0.05 * self.act_range * np.random.randn(*action.shape)
-        # action = np.clip(action, -self.act_range, self.act_range)
-        # # random actions...
-        # random_actions = np.random.uniform(low=-self.act_range, high=self.act_range, \
-        #                                     size=self.act_dim)
-        # # choose if use the random actions
-        # action += np.random.binomial(1, 0.2, 1)[0] * (random_actions - action)
+        action += 0.05 * self.act_range * np.random.randn(*action.shape)
+        action = np.clip(action, -self.act_range, self.act_range)
+        # random actions...
+        random_actions = np.random.uniform(low=-self.act_range, high=self.act_range, \
+                                            size=self.act_dim)
+        # choose if use the random actions
+        action += np.random.binomial(1, 0.2, 1)[0] * (random_actions - action)
         return action
     
     def update_network(self, batch_size):
-        states, actions, rewards, dones, new_states, _, goals,_ = self.sample_batch(batch_size)
+        states, actions, rewards, dones, new_states, ag, goals,_ = self.sample_batch(batch_size)
 
         # Preprocess
         states, goals = self.clip_states_goals(new_states, goals)
@@ -165,11 +164,13 @@ class DDPG:
                         old_achieved_goal = new_achieved_goal
                         old_state = new_state
                     
+
                     if args["HER_strat"] == "final":
                         experience = episode_exp[-1]
                         experience[3] = True # set done = true
                         experience[-1] = np.copy(experience[-2]) # set g' to achieved goal
-                        experience[2] = 0 # set reward of success
+                        reward = self.env.compute_reward(experience[-2], experience[-1], None) # set reward of success
+                        experience[2] = reward
                         episode_exp_her.append(experience)
                     
                     elif args["HER_strat"] in ["future", "episode"]:
@@ -182,10 +183,12 @@ class DDPG:
                                     selected = np.random.randint(t, len(episode_exp)) 
                                 elif args["HER_strat"] == "episode":
                                     # Select an exp from the same episode
-                                    selected = np.random.randint(0, len(episode_exp)) 
+                                    selected = np.random.randint(0, len(episode_exp))
+                                # Take the achieved goal of the selected 
                                 ag_selected = np.copy(episode_exp[selected][5])
                                 s, a, _, d, ns, ag, _ = episode_exp[t]
                                 r = self.env.compute_reward(ag_selected, ag, None)
+                                # New transition where the achieved goal of the selected is the new goal
                                 her_transition  = [np.copy(s), np.copy(a), r, d, np.copy(ns), np.copy(ag), np.copy(ag_selected)]
                                 episode_exp_her.append(her_transition)
                     
@@ -195,13 +198,10 @@ class DDPG:
                     # Update Normalizers with the observations of this episode
                     self.update_normalizers(episode_exp, episode_exp_her)
                     
-                    for _ in range(OPTIMIZATION_STEPS):
-                        # Sample experience from buffer
-                        self.update_network(args["batch_size"])
-                    print([param for param in self.actor_network.parameters()])
+                for _ in range(OPTIMIZATION_STEPS):
+                    # Sample experience from buffer
+                    self.update_network(args["batch_size"])
                 
-                    
-        
             success_rate = self.eval()        
             success_rates.append(success_rate)
             print("Epoch:", ep_num+1, " -- success rate:", success_rates[-1], " -- duration:", time.time() - start)
@@ -226,13 +226,13 @@ class DDPG:
     
     def eval(self):
         print("Evaluation")
-        global_success_rate = 0
+        eval_success = 0
         for _ in range(NUM_TEST):
             observation = self.env.reset()
             state = observation['observation']
             goal = observation['desired_goal']
             for _ in range(50):
-                self.env.render()
+                # self.env.render()
                 with torch.no_grad():
                     input = self.preprocess_inputs(state, goal)
                     pi = self.actor_network(input)
@@ -241,13 +241,11 @@ class DDPG:
                 state = new_observation['observation']
                 goal = new_observation['desired_goal']
                 if info['is_success']:
-                    global_success_rate += 1
+                    eval_success += 1
                     break
-                
 
-
-        global_success_rate = global_success_rate / NUM_TEST
-        return global_success_rate
+        eval_success = eval_success / NUM_TEST
+        return eval_success
 
 
  

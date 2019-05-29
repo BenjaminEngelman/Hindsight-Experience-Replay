@@ -55,7 +55,6 @@ class MemoryBuffer(object):
         """ Sample a batch, optionally with (PER)
         """
         batch = []
-
         # Sample using prorities
         if(self.with_per):
             T = self.buffer.total() // batch_size
