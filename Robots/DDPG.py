@@ -69,6 +69,8 @@ class DDPG:
         return state, goal
     
     def preprocess_inputs(self, state, goal):
+        """Normalize and concatenate state and goal"""
+        #state, goal = self.clip_states_goals(state, goal)
         state = self.state_normalizer.normalize(state)
         goal = self.goal_normalizer.normalize(goal)
         inputs = np.concatenate([state, goal])
@@ -76,7 +78,8 @@ class DDPG:
     
     def select_actions(self, pi):
         # add the gaussian
-        action = pi.detach().cpu().numpy().squeeze()
+        #action = pi.detach().cpu().numpy().squeeze()
+        action = pi.cpu().numpy().squeeze()
         action += 0.05 * self.act_range * np.random.randn(*action.shape)
         action = np.clip(action, -self.act_range, self.act_range)
         # random actions...
@@ -87,17 +90,18 @@ class DDPG:
         return action
     
     def update_network(self, batch_size):
-        states, actions, rewards, dones, new_states, ag, goals,_ = self.sample_batch(batch_size)
-
+        states, actions, rewards, dones, new_states, _, goals,_ = self.sample_batch(batch_size)
+        #DAV UPDATE
         # Preprocess
-        states, goals = self.clip_states_goals(new_states, goals)
-        norm_new_states = self.state_normalizer.normalize(new_states)
-        norm_goals = self.goal_normalizer.normalize(goals)
-        inputs_next_norm = np.concatenate([norm_new_states, norm_goals], axis=1)
+        states, goals = self.clip_states_goals(states, goals)
+        new_states, _ = self.clip_states_goals(new_states, goals)
 
-        states, _ = self.clip_states_goals(states, goals)
         norm_states = self.state_normalizer.normalize(states)
+        norm_goals = self.goal_normalizer.normalize(goals)
         inputs_norm = np.concatenate([norm_states, norm_goals], axis=1)
+
+        norm_new_states = self.state_normalizer.normalize(new_states)
+        inputs_next_norm = np.concatenate([norm_new_states, norm_goals], axis=1)
 
         # To tensor
         inputs_norm_tensor = torch.tensor(inputs_norm, dtype=torch.float32)
