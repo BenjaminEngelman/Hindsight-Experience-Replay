@@ -16,9 +16,9 @@ if not args.her_strat or not args.env :
     print("Example run: python3 demo.py --env FetchPush-v1 --her_strat final")
     exit(1)
 
-if args.her_strat not in ['future', 'final']:
+if args.her_strat not in ['future', 'final', 'None']:
     print("Invalid HER strategy")
-    print("Strategies: final, future, episode")
+    print("Strategies: final, future, episode, None")
     exit(1)
 
 # process the inputs
