@@ -35,8 +35,12 @@ class DDPG:
         # Create actor and critic networks
         self.actor_network = Actor(self.env_dim, act_dim, act_range)
         self.actor_target_network = Actor(self.env_dim, act_dim, act_range)
+        self.actor_target_network.load_state_dict(self.actor_network.state_dict())
+
         self.critic_network = Critic(self.env_dim, act_dim, act_range)
         self.critic_target_network = Critic(self.env_dim, act_dim, act_range)
+        self.actor_target_network.load_state_dict(self.actor_network.state_dict())
+
 
         # Optimizer
         self.actor_optim = torch.optim.Adam(
@@ -136,7 +140,7 @@ class DDPG:
         actions_real = self.actor_network(inputs_norm_tensor)
         actor_loss = - \
             self.critic_network(inputs_norm_tensor, actions_real).mean()
-        actor_loss += 1 * (actions_real / self.act_range).pow(2).mean()
+        actor_loss += 1.0 * (actions_real / self.act_range).pow(2).mean()
         # start to update the network
         self.actor_optim.zero_grad()
         actor_loss.backward()
@@ -152,8 +156,7 @@ class DDPG:
                 (1 - self.tau) * param.data + self.tau * target_param.data)
 
     def train(self, args):
-        self.create_save_dir(
-            args["save_dir"], args["env_name"], args["HER_strat"])
+        self.create_save_dir(args["save_dir"], args["env_name"], args["HER_strat"])
 
         success_rates = []
         for ep_num in range(NUM_EPOCHS):
@@ -283,6 +286,7 @@ class DDPG:
             state = observation['observation']
             goal = observation['desired_goal']
             for _ in range(self.env._max_episode_steps):
+                self.env.render()
                 with torch.no_grad():
                     input = self.preprocess_inputs(state, goal)
                     pi = self.actor_network(input)
