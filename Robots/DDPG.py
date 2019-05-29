@@ -100,7 +100,6 @@ class DDPG:
 
     def update_network(self, batch_size):
         s, actions, rewards, _, ns, _, g, _ = self.sample_batch(batch_size)
-        print(len(s), len(actions), len(rewards, len(ns), len(g)))
         # DAV UPDATE
         # Preprocess
         states, goals = self.clip_states_goals(s, g)
@@ -218,8 +217,6 @@ class DDPG:
 
                     self.memorize(episode_exp)
                     self.memorize(episode_exp_her)
-
-                    print(self.buffer.size())
 
                     # Update Normalizers with the observations of this episode
                     self.update_normalizers(episode_exp, episode_exp_her)
