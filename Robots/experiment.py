@@ -38,7 +38,7 @@ train_args = {
     "env_name": args.env,
     "save_dir": "saved_models",
     "render": False if args.render == "False" else True,
-    "batch_size": 256,
+    "batch_size": 1024,
     "HER_strat": args.her_strat,
     "HER_k": int(args.k),
     "max_timesteps": env._max_episode_steps

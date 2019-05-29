@@ -35,8 +35,12 @@ class DDPG:
         # Create actor and critic networks
         self.actor_network = Actor(self.env_dim, act_dim, act_range)
         self.actor_target_network = Actor(self.env_dim, act_dim, act_range)
+        self.actor_target_network.load_state_dict(self.actor_network.state_dict())
+
         self.critic_network = Critic(self.env_dim, act_dim, act_range)
         self.critic_target_network = Critic(self.env_dim, act_dim, act_range)
+        self.actor_target_network.load_state_dict(self.actor_network.state_dict())
+
 
         # Optimizer
         self.actor_optim = torch.optim.Adam(
@@ -102,19 +106,18 @@ class DDPG:
         states, goals = self.clip_states_goals(s, g)
         new_states, new_goals = self.clip_states_goals(ns, g)
 
+
         norm_states = self.state_normalizer.normalize(states)
         norm_goals = self.goal_normalizer.normalize(goals)
         inputs_norm = np.concatenate([norm_states, norm_goals], axis=1)
 
         norm_new_states = self.state_normalizer.normalize(new_states)
         norm_new_goals = self.goal_normalizer.normalize(new_goals)
-        inputs_next_norm = np.concatenate(
-            [norm_new_states, norm_new_goals], axis=1)
+        inputs_next_norm = np.concatenate([norm_new_states, norm_new_goals], axis=1)
 
         # To tensor
         inputs_norm_tensor = torch.tensor(inputs_norm, dtype=torch.float32)
-        inputs_next_norm_tensor = torch.tensor(
-            inputs_next_norm, dtype=torch.float32)
+        inputs_next_norm_tensor = torch.tensor(inputs_next_norm, dtype=torch.float32)
         actions_tensor = torch.tensor(actions, dtype=torch.float32)
         r_tensor = torch.tensor(rewards, dtype=torch.float32)
 
@@ -122,8 +125,7 @@ class DDPG:
             # do the normalization
             # concatenate the stuffs
             actions_next = self.actor_target_network(inputs_next_norm_tensor)
-            q_next_value = self.critic_target_network(
-                inputs_next_norm_tensor, actions_next)
+            q_next_value = self.critic_target_network(inputs_next_norm_tensor, actions_next)
             q_next_value = q_next_value.detach()
             target_q_value = r_tensor + self.gamma * q_next_value
             target_q_value = target_q_value.detach()
@@ -135,9 +137,8 @@ class DDPG:
         critic_loss = (target_q_value - real_q_value).pow(2).mean()
         # the actor loss
         actions_real = self.actor_network(inputs_norm_tensor)
-        actor_loss = - \
-            self.critic_network(inputs_norm_tensor, actions_real).mean()
-        actor_loss += 1 * (actions_real / self.act_range).pow(2).mean()
+        actor_loss = - self.critic_network(inputs_norm_tensor, actions_real).mean()
+        actor_loss += 1.0 * (actions_real / self.act_range).pow(2).mean()
         # start to update the network
         self.actor_optim.zero_grad()
         actor_loss.backward()
@@ -153,8 +154,7 @@ class DDPG:
                 (1 - self.tau) * param.data + self.tau * target_param.data)
 
     def train(self, args):
-        self.create_save_dir(
-            args["save_dir"], args["env_name"], args["HER_strat"])
+        self.create_save_dir(args["save_dir"], args["env_name"], args["HER_strat"])
 
         success_rates = []
         for ep_num in range(NUM_EPOCHS):
@@ -182,7 +182,7 @@ class DDPG:
                         new_state = obs['observation']
                         new_achieved_goal = obs['achieved_goal']
                         # Add outputs to memory buffer
-                        episode_exp.append([old_state.copy(), action.copy(), reward, done, new_state.copy(), old_achieved_goal.copy(), goal.copy()])
+                        episode_exp.append([old_state.copy(), action.copy(), reward, done, new_state.copy(), new_achieved_goal.copy(), goal.copy()])
 
                         old_achieved_goal = new_achieved_goal
                         old_state = new_state
@@ -204,20 +204,16 @@ class DDPG:
                             for _ in range(args["HER_k"]):
                                 if args["HER_strat"] == "future":
                                     # Select a future exp from the same episod
-                                    selected = np.random.randint(
-                                        t, len(episode_exp))
+                                    selected = np.random.randint(t, len(episode_exp))
                                 elif args["HER_strat"] == "episode":
                                     # Select an exp from the same episode
-                                    selected = np.random.randint(
-                                        0, len(episode_exp))
+                                    selected = np.random.randint(0, len(episode_exp))
                                 # Take the achieved goal of the selected
                                 ag_selected = np.copy(episode_exp[selected][5])
                                 s, a, _, d, ns, ag, _ = episode_exp[t]
-                                r = self.env.compute_reward(
-                                    ag_selected, ag, None)
+                                r = self.env.compute_reward(ag_selected, ag, None)
                                 # New transition where the achieved goal of the selected is the new goal
-                                her_transition = [np.copy(s), np.copy(a), r, d, np.copy(
-                                    ns), np.copy(ag), np.copy(ag_selected)]
+                                her_transition = [np.copy(s), np.copy(a), r, d, np.copy(ns), np.copy(ag), np.copy(ag_selected)]
                                 episode_exp_her.append(her_transition)
 
                     self.memorize(episode_exp)
@@ -228,16 +224,14 @@ class DDPG:
                     # Update Normalizers with the observations of this episode
                     self.update_normalizers(episode_exp, episode_exp_her)
 
-                # Train network
-                for _ in range(OPTIMIZATION_STEPS):
-                    # Sample experience from buffer
-                    self.update_network(args["batch_size"])
+                    # Train network
+                    for _ in range(OPTIMIZATION_STEPS):
+                        # Sample experience from buffer
+                        self.update_network(args["batch_size"])
 
-                # Soft update the target networks
-                self.soft_update_target_network(
-                    self.actor_target_network, self.actor_network)
-                self.soft_update_target_network(
-                    self.critic_target_network, self.critic_network)
+                    # Soft update the target networks
+                    self.soft_update_target_network( self.actor_target_network, self.actor_network)
+                    self.soft_update_target_network( self.critic_target_network, self.critic_network)
 
             success_rate = self.eval()
             success_rates.append(success_rate)
@@ -276,7 +270,7 @@ class DDPG:
         self.state_normalizer.update(states)
         self.goal_normalizer.update(goals)
         self.state_normalizer.recompute_stats()
-        self.goal_normalizer.recompute_stats()
+        # self.goal_normalizer.recompute_stats()
 
     def eval(self):
         print("Evaluation")
@@ -286,6 +280,7 @@ class DDPG:
             state = observation['observation']
             goal = observation['desired_goal']
             for _ in range(self.env._max_episode_steps):
+                # self.env.render()
                 with torch.no_grad():
                     input = self.preprocess_inputs(state, goal)
                     pi = self.actor_network(input)

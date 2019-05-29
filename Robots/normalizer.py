@@ -15,7 +15,7 @@ class Normalizer:
     
     # update the parameters of the normalizer
     def update(self, v):
-        v = v.reshape(-1, self.size)
+        v = v.reshape(-1, self.size)        
         # do the computing
         self.total_sum += v.sum(axis=0)
         self.total_sumsq += (np.square(v)).sum(axis=0)
@@ -24,10 +24,9 @@ class Normalizer:
     def recompute_stats(self):
         self.mean = self.total_sum / self.total_count
         self.std = np.sqrt(np.maximum(np.square(self.eps), (self.total_sumsq / self.total_count) - np.square(self.total_sum / self.total_count)))
-    
+
     # normalize the observation
     def normalize(self, v, clip_range=None):
         if clip_range is None:
             clip_range = self.default_clip_range
-        
         return np.clip((v - self.mean) / (self.std), -clip_range, clip_range)
