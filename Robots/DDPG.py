@@ -7,13 +7,18 @@ from memory_buffer import MemoryBuffer
 from normalizer import Normalizer
 import torch
 import os
+from utils import *
+from mpi4py import MPI
+
 
 
 NUM_EPOCHS = 200
 NUM_CYCLES = 10
 NUM_EPISODES = 16
+ROLLOUT_PER_WORKER = 2
 OPTIMIZATION_STEPS = 40
 NUM_TEST = 10
+
 
 
 class DDPG:
@@ -41,19 +46,19 @@ class DDPG:
         self.critic_target_network = Critic(self.env_dim, act_dim, act_range)
         self.actor_target_network.load_state_dict(self.actor_network.state_dict())
 
+        sync_networks(self.actor_network)
+        sync_networks(self.critic_network)
+
 
         # Optimizer
-        self.actor_optim = torch.optim.Adam(
-            self.actor_network.parameters(), lr=lr)
-        self.critic_optim = torch.optim.Adam(
-            self.critic_network.parameters(), lr=lr)
+        self.actor_optim = torch.optim.Adam(self.actor_network.parameters(), lr=lr)
+        self.critic_optim = torch.optim.Adam(self.critic_network.parameters(), lr=lr)
 
         # Replay buffer
         self.buffer = MemoryBuffer(buffer_size)
 
         # Normalizers
-        self.goal_normalizer = Normalizer(
-            goal_dim, default_clip_range=5)  # Clip between [-5, 5]
+        self.goal_normalizer = Normalizer(goal_dim, default_clip_range=5)  # Clip between [-5, 5]
         self.state_normalizer = Normalizer(state_dim, default_clip_range=5)
 
     def policy_action(self, s, g):
@@ -141,10 +146,12 @@ class DDPG:
         # start to update the network
         self.actor_optim.zero_grad()
         actor_loss.backward()
+        sync_grads(self.actor_network)
         self.actor_optim.step()
         # update the critic_network
         self.critic_optim.zero_grad()
         critic_loss.backward()
+        sync_grads(self.critic_network)
         self.critic_optim.step()
 
     def soft_update_target_network(self, target, source):
@@ -153,25 +160,24 @@ class DDPG:
                 (1 - self.tau) * param.data + self.tau * target_param.data)
 
     def train(self, args):
-        self.create_save_dir(args["save_dir"], args["env_name"], args["HER_strat"])
+        if MPI.COMM_WORLD.Get_rank() == 0:
+            self.create_save_dir(args["save_dir"], args["env_name"], args["HER_strat"])
 
         success_rates = []
         for ep_num in range(NUM_EPOCHS):
             start = time.time()
             for cycle in range(NUM_CYCLES):
-                print("Cycle : %d" % cycle)
-                for _ in range(NUM_EPISODES):
+                for _ in range(ROLLOUT_PER_WORKER):
                     # Reset episode
                     observation = self.env.reset()
                     old_state = observation['observation']
-                    old_achieved_goal = observation['achieved_goal']
                     goal = observation['desired_goal']
+                    old_achieved_goal = observation['achieved_goal']
                     episode_exp = []
                     episode_exp_her = []
                     done = False
-                    for _ in range(args["max_timesteps"]):
-                        if args['render']:
-                            self.env.render()
+                    for _ in range(self.env._max_episode_steps):
+                        if args['render']: self.env.render()
                         with torch.no_grad():
                             # Actor picks an action (following the deterministic policy)
                             pi = self.policy_action(old_state, goal)
@@ -181,7 +187,7 @@ class DDPG:
                         new_state = obs['observation']
                         new_achieved_goal = obs['achieved_goal']
                         # Add outputs to memory buffer
-                        episode_exp.append([old_state.copy(), action.copy(), reward, done, new_state.copy(), new_achieved_goal.copy(), goal.copy()])
+                        episode_exp.append([old_state.copy(), action.copy(), reward, done, new_state.copy(), old_achieved_goal.copy(), goal.copy()])
 
                         old_achieved_goal = new_achieved_goal
                         old_state = new_state
@@ -221,21 +227,20 @@ class DDPG:
                     # Update Normalizers with the observations of this episode
                     self.update_normalizers(episode_exp, episode_exp_her)
 
-                    # Train network
-                    for _ in range(OPTIMIZATION_STEPS):
-                        # Sample experience from buffer
-                        self.update_network(args["batch_size"])
+                for _ in range(OPTIMIZATION_STEPS):
+                    # Sample experience from buffer
+                    self.update_network(args["batch_size"])
 
-                    # Soft update the target networks
-                    self.soft_update_target_network( self.actor_target_network, self.actor_network)
-                    self.soft_update_target_network( self.critic_target_network, self.critic_network)
+                # Soft update the target networks
+                self.soft_update_target_network( self.actor_target_network, self.actor_network)
+                self.soft_update_target_network( self.critic_target_network, self.critic_network)
 
             success_rate = self.eval()
             success_rates.append(success_rate)
-            print("Epoch:", ep_num+1, " -- success rate:",
-                  success_rates[-1], " -- duration:", time.time() - start)
-            torch.save([self.state_normalizer.mean, self.state_normalizer.std, self.goal_normalizer.mean, self.goal_normalizer.std, self.actor_network.state_dict()],
-                       self.model_path + '/model.pt')
+            if MPI.COMM_WORLD.Get_rank() == 0:
+                print("Epoch:", ep_num+1, " -- success rate:", success_rates[-1], " -- duration:", time.time() - start)
+                torch.save([self.state_normalizer.mean, self.state_normalizer.std, self.goal_normalizer.mean, self.goal_normalizer.std, self.actor_network.state_dict()],
+                        self.model_path + '/model.pt')
 
         return success_rates
 
@@ -264,15 +269,16 @@ class DDPG:
             goals = np.copy(episode_exp_goals)
 
         states, goals = self.clip_states_goals(states, goals)
+
         self.state_normalizer.update(states)
         self.goal_normalizer.update(goals)
         self.state_normalizer.recompute_stats()
-        # self.goal_normalizer.recompute_stats()
+        self.goal_normalizer.recompute_stats()
 
     def eval(self):
-        print("Evaluation")
-        eval_success = 0
+        total_success_rate = []
         for _ in range(NUM_TEST):
+            per_success_rate = []
             observation = self.env.reset()
             state = observation['observation']
             goal = observation['desired_goal']
@@ -284,12 +290,14 @@ class DDPG:
                     action = pi.detach().cpu().numpy().squeeze()
                 new_observation, _, _, info = self.env.step(action)
                 state = new_observation['observation']
-            if info['is_success']:
-                eval_success += 1
-
-        eval_success = eval_success / NUM_TEST
-        return eval_success
-
+                per_success_rate.append(info['is_success'])
+            total_success_rate.append(per_success_rate)
+               
+        total_success_rate = np.array(total_success_rate)
+        local_success_rate = np.mean(total_success_rate[:, -1])
+        global_success_rate = MPI.COMM_WORLD.allreduce(local_success_rate, op=MPI.SUM)
+        return global_success_rate / MPI.COMM_WORLD.Get_size()
+    
     # def save_weights(self, path):
     #     path += '_LR_{}'.format(self.lr)
     #     self.actor.save(path + "_actor")

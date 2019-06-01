@@ -16,9 +16,9 @@ if not args.her_strat or not args.env :
     print("Example run: python3 demo.py --env FetchPush-v1 --her_strat final")
     exit(1)
 
-if args.her_strat not in ['future', 'final', 'None']:
+if args.her_strat not in ['future', 'final', 'none']:
     print("Invalid HER strategy")
-    print("Strategies: final, future, episode, None")
+    print("Strategies: final, future, episode, none")
     exit(1)
 
 # process the inputs
@@ -36,7 +36,7 @@ if __name__ == '__main__':
     model_path = 'saved_models/%s/%s/model.pt' % (args.env, args.her_strat)
     o_mean, o_std, g_mean, g_std, model = torch.load(model_path, map_location=lambda storage, loc: storage)
     # create the environment
-    env = gym.make("FetchReach-v1")
+    env = gym.make(args.env)
     # get the env param
     obs = env.reset()
     # get the environment params
