@@ -190,8 +190,7 @@ class DDPG:
                         experience = episode_exp[-1]
                         # set g' to achieved goal
                         experience[-1] = np.copy(experience[-2])
-                        reward = self.env.compute_reward(
-                            experience[-2], experience[-1], None)  # set reward of success
+                        reward = self.env.compute_reward(experience[-2], experience[-1], None)  # set reward of success
                         experience[2] = reward
                         episode_exp_her.append(experience)
 

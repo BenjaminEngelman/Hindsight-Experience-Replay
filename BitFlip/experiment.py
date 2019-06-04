@@ -1,10 +1,8 @@
 from Environment import BitFlippingEnv
 from DQN import DQN
 from ReplayMemory import ReplayMemory
-import matplotlib.pyplot as plt
 import time
 import numpy as np
-import argparse
 from copy import deepcopy
 
 
@@ -97,7 +95,7 @@ def learn(agent, env, her_strat):
         agent.next_episode(n)
         
         success_rate.append(successes/NUM_EPISODES)
-        # print("Epoch:", i+1, " -- success rate:", success_rate[-1], " -- epsilon: ", agent.epsilon)
+        print("Epoch:", i+1, " -- success rate:", success_rate[-1], " -- epsilon: ", agent.epsilon)
     
     return success_rate
 

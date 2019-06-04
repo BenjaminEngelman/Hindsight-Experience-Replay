@@ -3,13 +3,18 @@ from Environment import BitFlippingEnv
 from experiment import learn
 from DQN import DQN
 
-NUM_PROCESSES = 32
-NUM_TRIAL = 5
+NUM_PROCESSES = 2
+NUM_TRIAL = 1
 
 NUM_BITS = 15
 
 
-STRATS = ['none', 'final', 'future', 'episode']
+STRATS = [
+    # 'none',
+    'final',
+    'future',
+    # 'episode'
+    ]
 
 def runTrial(her_strat, per):
     env = BitFlippingEnv(n=NUM_BITS)
