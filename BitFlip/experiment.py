@@ -25,7 +25,7 @@ from copy import deepcopy
 K = 4 # For strategy future
 REPLAY_MEMORY_SIZE = 100000
 NUM_BITS = 15
-NUM_EPOCHS = 2
+NUM_EPOCHS = 250
 NUM_EPISODES = 16
 OPTIMIZATION_STEPS = 40
 
@@ -55,28 +55,38 @@ def learn(agent, env, her_strat):
 
             if her_strat == "final":
                 # Final experience becomes (s, a, r, s', g') where g' = s'
-                experience = episode_exp[-1]
-                experience[-2] = True # set done = true
-                experience[-1] = experience[-3] # set g' = s'
-                experience[2] = 1 # set reward of success
-                episode_exp_her.append(experience)
+                new_goal = deepcopy(episode_exp[-1][3]) # next state of last
 
-            elif her_strat in ["future", "episode"]:
-                # For each transition of the episode trajectory
-                for t in range(len(episode_exp)):
-                    # Add K random states which come from the same episode as the transition
-                    for k in range(K):
-                        if her_strat == "future":
-                            # Select a future exp from the same episod
-                            selected = np.random.randint(t, len(episode_exp)) 
-                        elif her_strat == "episode":
-                            # Select an exp from the same episode
-                            selected = np.random.randint(0, len(episode_exp))  
-                        _, _, _, g, _, _ = episode_exp[selected] # g = s' of selected
-                        s, a, _, ns, _, _  = episode_exp[t]
-                        d = np.array_equal(ns, g)
-                        r = 1 if d else -1
-                        episode_exp_her.append([s, a, r, ns, d, g])
+                for experience in episode_exp:
+                    her_exp = deepcopy(experience)
+                    her_exp[-1] = new_goal
+                    her_exp[-2] = np.array_equal(her_exp[3], new_goal)
+                    her_exp[2] = 1 if her_exp[-2] else -1
+                    episode_exp_her.append(her_exp)
+
+            elif her_strat == "future":
+                for t, experience in enumerate(episode_exp[0:-2]):
+                    for _ in range(K):
+                        selected = np.random.randint(t+1, len(episode_exp)) 
+
+                        new_goal = deepcopy(episode_exp[selected][3]) # g = s' of selected
+                        her_exp = deepcopy(episode_exp[selected])
+                        her_exp[-1] = new_goal
+                        her_exp[-2] = np.array_equal(her_exp[3], new_goal)
+                        her_exp[2] = 1 if her_exp[-2] else -1
+                        episode_exp_her.append(her_exp)
+
+            elif her_strat == "episode":
+                for t, experience in enumerate(episode_exp):
+                    for _ in range(K):
+                        selected = np.random.randint(0, len(episode_exp)) 
+
+                        new_goal = deepcopy(episode_exp[selected][3]) # g = s' of selected
+                        her_exp = deepcopy(episode_exp[selected])
+                        her_exp[-1] = new_goal
+                        her_exp[-2] = np.array_equal(her_exp[3], new_goal)
+                        her_exp[2] = 1 if her_exp[-2] else -1
+                        episode_exp_her.append(her_exp)
 
 
             agent.remember(deepcopy(episode_exp))

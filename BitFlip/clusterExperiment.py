@@ -3,8 +3,8 @@ from Environment import BitFlippingEnv
 from experiment import learn
 from DQN import DQN
 
-NUM_PROCESSES = 4
-NUM_TRIAL = 2
+NUM_PROCESSES = 32
+NUM_TRIAL = 5
 
 NUM_BITS = 15
 
@@ -22,7 +22,10 @@ def runTrial(her_strat, per):
 def addJob(jobs, pool):
     for i in range(NUM_TRIAL):
         for strat in STRATS :
-            for per in [False, True]:
+            for per in [
+                False,
+                # True
+            ]:
                 name = "%s_%s" % (strat, per)
                 jobs[(name, i)] = pool.apply_async(runTrial, (strat, per))
 
