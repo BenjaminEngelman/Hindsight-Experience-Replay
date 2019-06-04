@@ -1,0 +1,11 @@
+submit directory: /svub0/bengelma/Hindsight-Experience-Replay/BitFlip
+jobid: 2140719
+hostname: nic22
+Tue Jun  4 16:26:57 CEST 2019
+--- Start Job ---
+---- End Job ----
+Tue Jun  4 16:27:57 CEST 2019
+Job ID: 2140719
+Job Name: runCluster.pbs
+Resources Requested: walltime=05:00:00,mem=2gb,nodes=1:ppn=20,neednodes=1:ppn=20
+Resources Used: cput=00:00:03,vmem=949632kb,walltime=00:01:03,mem=47124kb,energy_used=0
