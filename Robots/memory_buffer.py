@@ -26,7 +26,7 @@ class MemoryBuffer(object):
     def memorize(self, state, action, reward, done, new_state, achieved_goal, goal, error=None):
         """ Save an experience to memory, optionally with its TD-Error
         """
-        experience = (state, action, reward, done, new_state, achieved_goal, goal)
+        experience = (state, action, reward, done, new_state, achieved_goal, goal, error)
         if(self.with_per):
             priority = self.priority(error[0])
             self.buffer.add(priority, experience)

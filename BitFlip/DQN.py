@@ -5,6 +5,7 @@ from keras.models import load_model
 from ReplayMemory import ReplayMemory
 import random
 import numpy as np
+from copy import deepcopy
 
 
 SAVE_MODEL_PATH = "DQN-HER.h5"
@@ -24,7 +25,7 @@ class NeuralNet:
         self.model.add(Dense(action_space_size, activation="linear"))
         adam = Adam(lr=lr)
         self.model.compile(optimizer=adam, loss="mse")
-        self.model.summary()  
+        # self.model.summary()  
     
     def get_weights(self):
         return self.model.get_weights()
@@ -39,8 +40,9 @@ class NeuralNet:
         return self.model.fit(inputs, outputs, epochs=1, batch_size=batch_size, verbose=0)
 
 class DQN:
-    def __init__(self,num_action, state_size, goal_size, max_eps=0.2, min_eps=0.02, eps_decay=0.95, gamma=0.98, lr=0.001, batch_size=128, buffer_size=1000000, init_nn=None):
+    def __init__(self,num_action, state_size, goal_size, max_eps=0.2, min_eps=0.02, eps_decay=0.95, gamma=0.98, lr=0.001, batch_size=128, buffer_size=1000000, PER=False, init_nn=None):
         
+        self.PER = PER 
         # Init Hyperparameters       
         self.epsilon = max_eps
         self.min_eps = min_eps
@@ -49,7 +51,7 @@ class DQN:
         self.num_action = num_action
         self.batch_size = batch_size
         self.epsilon = max_eps
-        self.memory = ReplayMemory(buffer_size)
+        self.memory = ReplayMemory(buffer_size, with_priorities=PER)
 
         self.state_size = state_size
         self.goal_size = goal_size
@@ -80,35 +82,66 @@ class DQN:
         '''Store a list of [state, action, reward, next state, done, goal] experiences in the memory
         '''
         for exp in experiences:
+            if self.PER:
+                td_error = self.compute_TD_error(exp)
+            else:
+                td_error = 0
+            exp.append(td_error)    
             self.memory.push(exp)
+                
+
     
+    def compute_TD_error(self, experience):
+        state, action, reward, next_state, _, goal = experience
+
+        # Next state (Q(s',a))
+        input_next_state = np.concatenate((next_state, goal))
+        input_next_state = preprocess_input(input_next_state, self.state_size * 2)
+        next_qvals = self.target_net.predict(input_next_state)[0]
+        best_action = np.argmax(self.policy_net.predict(input_next_state))
+        target_q_value = reward + self.gamma * next_qvals[best_action]
+
+        # Current state (Q(s,a))
+        input_state = np.concatenate((state, goal), axis=0)
+        input_state = preprocess_input(input_state, self.state_size * 2)
+        q_vals = self.policy_net.predict(input_state)[0]
+        current_q_value = q_vals[action]
+
+        return abs(target_q_value - current_q_value)
+
     def replay(self, optimization_step):
         '''Get a batch of exeriences from the memory and then train the policy
         network on those experiences
         '''
-        if self.memory.size() > self.batch_size:
-            for opt_step in range(optimization_step):
-                batch = self.memory.sample(self.batch_size)
-                inputs, targets = [], [] # Will be used to batch fit the policy net (it's way faster)
-                
-                for state, action, reward, next_state, done, goal in batch:
-                    target = reward
-                    if not done:
-                        input_next_state = np.concatenate((next_state, goal))
-                        input_next_state = preprocess_input(input_next_state, self.state_size * 2)
-                        next_qvals = self.target_net.predict(input_next_state)[0]
+    
+        for _ in range(optimization_step):
+            batch = self.memory.sample(self.batch_size)
+            inputs, targets = [], [] # Will be used to batch fit the policy net (it's way faster)
+            
+            for state, action, reward, next_state, done, goal, _, idx in batch:
+                target = reward
+                if not done:
+                    input_next_state = np.concatenate((next_state, goal))
+                    input_next_state = preprocess_input(input_next_state, self.state_size * 2)
+                    next_qvals = self.target_net.predict(input_next_state)[0]
 
-                        best_action = np.argmax(self.policy_net.predict(input_next_state))
-                        target = reward + self.gamma * next_qvals[best_action]
-                    
-                    input_state = np.concatenate((state, goal), axis=0)
-                    input_state = preprocess_input(input_state, self.state_size * 2)
-                    q_vals = self.policy_net.predict(input_state)[0]
-                    q_vals[action] = target
-                    inputs.append(input_state[0])
-                    targets.append(q_vals)
+                    best_action = np.argmax(self.policy_net.predict(input_next_state))
+                    target = reward + self.gamma * next_qvals[best_action]
                 
-                self.policy_net.fit(np.array(inputs), np.array(targets), self.batch_size)
+               
+                
+                input_state = np.concatenate((state, goal), axis=0)
+                input_state = preprocess_input(input_state, self.state_size * 2)
+                q_vals = self.policy_net.predict(input_state)[0]
+
+                if self.PER:
+                    self.memory.update(idx, abs(target - q_vals[action]))
+
+                q_vals[action] = target
+                inputs.append(input_state[0])
+                targets.append(q_vals)
+            
+            self.policy_net.fit(np.array(inputs), np.array(targets), self.batch_size)
 
             
     def next_episode(self, i):
@@ -124,4 +157,4 @@ class DQN:
         self.target_net.set_weights(self.policy_net.get_weights())
         
         # Save model
-        self.policy_net.model.save(SAVE_MODEL_PATH)
+        # self.policy_net.model.save(SAVE_MODEL_PATH)

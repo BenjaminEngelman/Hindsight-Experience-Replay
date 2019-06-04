@@ -1,15 +1,14 @@
 import sys
 import numpy as np
 import time
-from tqdm import tqdm
 from actor_critic import Actor, Critic
-from memory_buffer import MemoryBuffer
+from ReplayMemory import ReplayMemory
 from normalizer import Normalizer
 import torch
 import os
 from utils import *
 from mpi4py import MPI
-
+from copy import deepcopy
 
 
 NUM_EPOCHS = 200
@@ -18,7 +17,6 @@ NUM_EPISODES = 16
 ROLLOUT_PER_WORKER = 2
 OPTIMIZATION_STEPS = 40
 NUM_TEST = 10
-
 
 
 class DDPG:
@@ -55,7 +53,8 @@ class DDPG:
         self.critic_optim = torch.optim.Adam(self.critic_network.parameters(), lr=lr)
 
         # Replay buffer
-        self.buffer = MemoryBuffer(buffer_size)
+        # self.buffer = MemoryBuffer(buffer_size)
+        self.buffer = ReplayMemory(buffer_size)
 
         # Normalizers
         self.goal_normalizer = Normalizer(goal_dim, default_clip_range=5)  # Clip between [-5, 5]
@@ -71,12 +70,10 @@ class DDPG:
         """ Store experience in memory buffer
         """
         for exp in experiences:
-            state, action, reward, done, new_state, ag, goal = exp
-            self.buffer.memorize(np.copy(state), np.copy(
-                action), reward, done, np.copy(new_state), np.copy(ag), np.copy(goal))
+            self.buffer.push(exp)
 
     def sample_batch(self, batch_size):
-        return self.buffer.sample_batch(batch_size)
+        return deepcopy(self.buffer.sample(batch_size))
 
     def clip_states_goals(self, state, goal):
         state = np.clip(state, -200, 200)
@@ -101,15 +98,15 @@ class DDPG:
                                            size=self.act_dim)
         # choose if use the random actions
         action += np.random.binomial(1, 0.3, 1)[0] * (random_actions - action)
+        action = np.clip(action, -self.act_range, self.act_range)
+
         return action
 
     def update_network(self, batch_size):
-        s, actions, rewards, _, ns, _, g, _ = self.sample_batch(batch_size)
-        # DAV UPDATE
-        # Preprocess
+        s, actions, rewards, ns, _, g = self.sample_batch(batch_size)
+        
         states, goals = self.clip_states_goals(s, g)
         new_states, new_goals = self.clip_states_goals(ns, g)
-
 
         norm_states = self.state_normalizer.normalize(states)
         norm_goals = self.goal_normalizer.normalize(goals)
@@ -156,8 +153,7 @@ class DDPG:
 
     def soft_update_target_network(self, target, source):
         for target_param, param in zip(target.parameters(), source.parameters()):
-            target_param.data.copy_(
-                (1 - self.tau) * param.data + self.tau * target_param.data)
+            target_param.data.copy_((1 - self.tau) * param.data + self.tau * target_param.data)
 
     def train(self, args):
         if MPI.COMM_WORLD.Get_rank() == 0:
@@ -166,35 +162,32 @@ class DDPG:
         success_rates = []
         for ep_num in range(NUM_EPOCHS):
             start = time.time()
-            for cycle in range(NUM_CYCLES):
+            for _ in range(NUM_CYCLES):
                 for _ in range(ROLLOUT_PER_WORKER):
                     # Reset episode
                     observation = self.env.reset()
-                    old_state = observation['observation']
+                    current_state = observation['observation']
                     goal = observation['desired_goal']
                     old_achieved_goal = observation['achieved_goal']
                     episode_exp = []
                     episode_exp_her = []
-                    done = False
                     for _ in range(self.env._max_episode_steps):
                         if args['render']: self.env.render()
                         with torch.no_grad():
-                            # Actor picks an action (following the deterministic policy)
-                            pi = self.policy_action(old_state, goal)
+                            pi = self.policy_action(current_state, goal)
                             action = self.select_actions(pi)
-                        # Retrieve new state, reward, and whether the state is terminal
-                        obs, reward, done, _ = self.env.step(action)
+                        obs, reward, _, _ = self.env.step(action)
                         new_state = obs['observation']
                         new_achieved_goal = obs['achieved_goal']
                         # Add outputs to memory buffer
-                        episode_exp.append([old_state.copy(), action.copy(), reward, done, new_state.copy(), old_achieved_goal.copy(), goal.copy()])
+                        episode_exp.append([current_state, action, reward, new_state, old_achieved_goal, goal])
+                        if reward == 0 : break
 
                         old_achieved_goal = new_achieved_goal
-                        old_state = new_state
+                        current_state = new_state
 
                     if args["HER_strat"] == "final":
                         experience = episode_exp[-1]
-                        experience[3] = True  # set done = true
                         # set g' to achieved goal
                         experience[-1] = np.copy(experience[-2])
                         reward = self.env.compute_reward(
@@ -215,17 +208,17 @@ class DDPG:
                                     selected = np.random.randint(0, len(episode_exp))
                                 # Take the achieved goal of the selected
                                 ag_selected = np.copy(episode_exp[selected][5])
-                                s, a, _, d, ns, ag, _ = episode_exp[t]
+                                s, a, _, ns, ag, _ = episode_exp[t]
                                 r = self.env.compute_reward(ag_selected, ag, None)
                                 # New transition where the achieved goal of the selected is the new goal
-                                her_transition = [np.copy(s), np.copy(a), r, d, np.copy(ns), np.copy(ag), np.copy(ag_selected)]
+                                her_transition = [s, a, r, ns, ag, ag_selected]
                                 episode_exp_her.append(her_transition)
 
-                    self.memorize(episode_exp)
-                    self.memorize(episode_exp_her)
+                    self.memorize(deepcopy(episode_exp))
+                    self.memorize(deepcopy(episode_exp_her))
 
                     # Update Normalizers with the observations of this episode
-                    self.update_normalizers(episode_exp, episode_exp_her)
+                    self.update_normalizers(deepcopy(episode_exp), deepcopy(episode_exp_her))
 
                 for _ in range(OPTIMIZATION_STEPS):
                     # Sample experience from buffer
@@ -258,10 +251,10 @@ class DDPG:
     def update_normalizers(self, episode_exp, episode_exp_her):
         # Update Normalizers
         episode_exp_states = np.vstack(np.array(episode_exp)[:, 0])
-        episode_exp_goals = np.vstack(np.array(episode_exp)[:, 6])
+        episode_exp_goals = np.vstack(np.array(episode_exp)[:, 5])
         if len(episode_exp_her) != 0 :
             episode_exp_her_states = np.vstack(np.array(episode_exp_her)[:, 0])
-            episode_exp_her_goals = np.vstack(np.array(episode_exp_her)[:, 6])
+            episode_exp_her_goals = np.vstack(np.array(episode_exp_her)[:, 5])
             states = np.concatenate([episode_exp_states, episode_exp_her_states])
             goals = np.concatenate([episode_exp_goals, episode_exp_her_goals])
         else:
@@ -270,8 +263,8 @@ class DDPG:
 
         states, goals = self.clip_states_goals(states, goals)
 
-        self.state_normalizer.update(states)
-        self.goal_normalizer.update(goals)
+        self.state_normalizer.update(deepcopy(states))
+        self.goal_normalizer.update(deepcopy(goals))
         self.state_normalizer.recompute_stats()
         self.goal_normalizer.recompute_stats()
 
@@ -297,12 +290,3 @@ class DDPG:
         local_success_rate = np.mean(total_success_rate[:, -1])
         global_success_rate = MPI.COMM_WORLD.allreduce(local_success_rate, op=MPI.SUM)
         return global_success_rate / MPI.COMM_WORLD.Get_size()
-    
-    # def save_weights(self, path):
-    #     path += '_LR_{}'.format(self.lr)
-    #     self.actor.save(path + "_actor")
-    #     self.critic.save(path + "_critic")
-
-    # def load_weights(self, path_actor, path_critic):
-    #     self.critic.load_weights(path_critic)
-    #     self.actor.load_weights(path_actor)
