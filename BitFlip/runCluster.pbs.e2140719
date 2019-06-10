@@ -1,7 +1,0 @@
-Using Theano backend.
-Traceback (most recent call last):
-  File "./clusterExperiment.py", line 3, in <module>
-    from experiment import learn
-  File "/svub0/bengelma/Hindsight-Experience-Replay/BitFlip/experiment.py", line 4, in <module>
-    import matplotlib.pyplot as plt
-ModuleNotFoundError: No module named 'matplotlib'
